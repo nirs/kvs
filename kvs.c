@@ -208,7 +208,56 @@ leave:
 
 static int del(const char *path, char *key)
 {
-    return 0;
+    int rc;
+    MDB_env *env;
+    MDB_txn *txn;
+    MDB_dbi dbi;
+    MDB_val kv;
+
+    rc = mdb_env_create(&env);
+    if (rc) {
+        fprintf(stderr, "mbd_env_create error: %s\n", mdb_strerror(rc));
+        goto leave;
+    }
+
+    rc = mdb_env_open(env, path, MDB_NOSUBDIR | MDB_NOLOCK, 0664);
+    if (rc) {
+        fprintf(stderr, "mbd_env_open error: %s\n", mdb_strerror(rc));
+        goto leave;
+    }
+
+    rc = mdb_txn_begin(env, NULL, 0, &txn);
+    if (rc) {
+        fprintf(stderr, "mbd_txn_begin: (%d) %s\n", rc, mdb_strerror(rc));
+        goto leave;
+    }
+
+    rc = mdb_dbi_open(txn, NULL, 0, &dbi);
+    if (rc) {
+        fprintf(stderr, "mbd_dbi_open: (%d) %s\n", rc, mdb_strerror(rc));
+        goto leave;
+    }
+
+    kv.mv_data = key;
+    kv.mv_size = strlen(key);
+
+    rc = mdb_del(txn, dbi, &kv, NULL);
+    if (rc) {
+        fprintf(stderr, "mbd_del: (%d) %s\n", rc, mdb_strerror(rc));
+        goto leave;
+    }
+
+    rc = mdb_txn_commit(txn);
+    if (rc) {
+        fprintf(stderr, "mdb_txn_commit: (%d) %s\n", rc, mdb_strerror(rc));
+        goto leave;
+    }
+
+leave:
+    mdb_dbi_close(env, dbi);
+    mdb_env_close(env);
+
+    return rc == 0 ? 0 : 1;
 }
 
 static int init(const char *path, int size_mb)

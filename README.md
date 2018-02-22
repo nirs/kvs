@@ -58,7 +58,9 @@ The value is read from stdin:
     $ kvs /dev/kvs/db get foo
     it works!
 
-Nothing else is implemented yet.
+## Deleting keys
+
+    $ kvs /dev/kvs/db del foo
 
 ## Todo
 
