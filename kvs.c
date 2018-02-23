@@ -20,9 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "lmdb.h"
 
-#define MAX_VALUE_SIZE (1024*1024)
+#include "db.h"
 
 static int get(const char *path, char *key);
 static int set(const char *path, char *key);
@@ -70,7 +69,7 @@ int main(int argc, char * argv[])
 
         size_mb = atoi(argv[3]);
         if (size_mb == 0) {
-            fprintf(stderr, "Invalid database size: '%d'\n", argv[3]);
+            fprintf(stderr, "Invalid database size: '%s'\n", argv[3]);
             exit(2);
         }
 
@@ -84,55 +83,27 @@ int main(int argc, char * argv[])
 static int get(const char *path, char *key)
 {
     int rc;
-    MDB_env *env;
-    MDB_txn *txn;
-    MDB_dbi dbi;
-    MDB_val kv;
-    MDB_val dv;
+    struct db db = {0};
+    MDB_val value;
 
-    rc = mdb_env_create(&env);
-    if (rc) {
-        fprintf(stderr, "mbd_env_create error: %s\n", mdb_strerror(rc));
+    rc = db_open(&db, path, 1);
+    if (rc)
         goto leave;
-    }
 
-    rc = mdb_env_open(env, path, MDB_NOSUBDIR | MDB_NOLOCK, 0664);
-    if (rc) {
-        fprintf(stderr, "mbd_env_open error: %s\n", mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
-    if (rc) {
-        fprintf(stderr, "mbd_txn_begin: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_dbi_open(txn, NULL, 0, &dbi);
-    if (rc) {
-        fprintf(stderr, "mbd_dbi_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    kv.mv_data = key;
-    kv.mv_size = strlen(key);
-
-    rc = mdb_get(txn, dbi, &kv, &dv);
+    rc = db_get(&db, key, &value);
     if (rc) {
         fprintf(stderr, "mbd_get: (%d) %s\n", rc, mdb_strerror(rc));
         goto leave;
     }
 
-    rc = fwrite(dv.mv_data, dv.mv_size, 1, stdout);
+    rc = fwrite(value.mv_data, value.mv_size, 1, stdout);
     if (rc != 1) {
         fprintf(stderr, "fwrite: (%d) %s\n", rc, strerror(errno));
         goto leave;
     }
 
-    mdb_txn_abort(txn);
 leave:
-    mdb_dbi_close(env, dbi);
-    mdb_env_close(env);
+    db_close(&db);
 
     return rc == 0 ? 0 : 1;
 }
@@ -140,68 +111,37 @@ leave:
 static int set(const char *path, char *key)
 {
     int rc;
-    MDB_env *env;
-    MDB_txn *txn;
-    MDB_dbi dbi;
-    MDB_val kv;
-    MDB_val dv;
+    struct db db = {0};
+    MDB_val value;
 
-    rc = mdb_env_create(&env);
-    if (rc) {
-        fprintf(stderr, "mbd_env_create: (%d) %s\n", rc, mdb_strerror(rc));
+    rc = db_open(&db, path, 0);
+    if (rc)
         goto leave;
-    }
 
-    rc = mdb_env_open(env, path, MDB_NOSUBDIR | MDB_NOLOCK, 0664);
-    if (rc) {
-        fprintf(stderr, "mbd_env_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_txn_begin(env, NULL, 0, &txn);
-    if (rc) {
-        fprintf(stderr, "mbd_txn_begin: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_dbi_open(txn, NULL, 0, &dbi);
-    if (rc) {
-        fprintf(stderr, "mbd_dbi_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    kv.mv_data = key;
-    kv.mv_size = strlen(kv.mv_data);
-
-    dv.mv_data = malloc(MAX_VALUE_SIZE);
-    if (dv.mv_data == NULL) {
+    value.mv_data = malloc(DB_MAX_VALUE_SIZE);
+    if (value.mv_data == NULL) {
         fprintf(stderr, "malloc: (%d) %s\n", errno, strerror(errno));
         goto leave;
     }
 
-    dv.mv_size = fread(dv.mv_data, 1, MAX_VALUE_SIZE, stdin);
+    value.mv_size = fread(value.mv_data, 1, DB_MAX_VALUE_SIZE, stdin);
 
     if (ferror(stdin)) {
         fprintf(stderr, "fread: (%d) %s\n", errno, strerror(errno));
         goto leave;
     }
 
-    rc = mdb_put(txn, dbi, &kv, &dv, 0);
+    rc = db_put(&db, key, &value);
     if (rc) {
         fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
         goto leave;
     }
 
-    rc = mdb_txn_commit(txn);
-    if (rc) {
-        fprintf(stderr, "mdb_txn_commit: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
+    rc = db_commit(&db);
 
 leave:
-    free(dv.mv_data);
-    mdb_dbi_close(env, dbi);
-    mdb_env_close(env);
+    free(value.mv_data);
+    db_close(&db);
 
     return rc == 0 ? 0 : 1;
 }
@@ -209,53 +149,22 @@ leave:
 static int del(const char *path, char *key)
 {
     int rc;
-    MDB_env *env;
-    MDB_txn *txn;
-    MDB_dbi dbi;
-    MDB_val kv;
+    struct db db = {0};
 
-    rc = mdb_env_create(&env);
-    if (rc) {
-        fprintf(stderr, "mbd_env_create error: %s\n", mdb_strerror(rc));
+    rc = db_open(&db, path, 0);
+    if (rc)
         goto leave;
-    }
 
-    rc = mdb_env_open(env, path, MDB_NOSUBDIR | MDB_NOLOCK, 0664);
-    if (rc) {
-        fprintf(stderr, "mbd_env_open error: %s\n", mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_txn_begin(env, NULL, 0, &txn);
-    if (rc) {
-        fprintf(stderr, "mbd_txn_begin: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_dbi_open(txn, NULL, 0, &dbi);
-    if (rc) {
-        fprintf(stderr, "mbd_dbi_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    kv.mv_data = key;
-    kv.mv_size = strlen(key);
-
-    rc = mdb_del(txn, dbi, &kv, NULL);
+    rc = db_del(&db, key);
     if (rc) {
         fprintf(stderr, "mbd_del: (%d) %s\n", rc, mdb_strerror(rc));
         goto leave;
     }
 
-    rc = mdb_txn_commit(txn);
-    if (rc) {
-        fprintf(stderr, "mdb_txn_commit: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
+    rc = db_commit(&db);
 
 leave:
-    mdb_dbi_close(env, dbi);
-    mdb_env_close(env);
+    db_close(&db);
 
     return rc == 0 ? 0 : 1;
 }
@@ -263,67 +172,32 @@ leave:
 static int init(const char *path, int size_mb)
 {
     int rc;
-    MDB_env *env;
-    MDB_txn *txn;
-    MDB_dbi dbi;
-    MDB_val key;
-    MDB_val data;
+    struct db db = {0};
+    MDB_val value;
 
-    rc = mdb_env_create(&env);
-    if (rc) {
-        fprintf(stderr, "mbd_env_create: (%d) %s\n", rc, mdb_strerror(rc));
+    db.mapsize = size_mb * 1024 * 1024;
+
+    rc = db_open(&db, path, 0);
+    if (rc)
         goto leave;
-    }
 
-    rc = mdb_env_set_mapsize(env, size_mb * 1024 * 1024);
-    if (rc) {
-        fprintf(stderr, "mbd_env_set_mapsize: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_env_open(env, path, MDB_NOSUBDIR | MDB_NOLOCK, 0664);
-    if (rc) {
-        fprintf(stderr, "mbd_env_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_txn_begin(env, NULL, 0, &txn);
-    if (rc) {
-        fprintf(stderr, "mbd_txn_begin: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    rc = mdb_dbi_open(txn, NULL, 0, &dbi);
-    if (rc) {
-        fprintf(stderr, "mbd_dbi_open: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
-
-    key.mv_data = ".kvs";
-    key.mv_size = strlen(key.mv_data);
-
-    data.mv_data =
+    value.mv_data =
         "{\n"
         "  \"version\": 1\n"
         "}\n";
 
-    data.mv_size = strlen(data.mv_data);
+    value.mv_size = strlen(value.mv_data);
 
-    rc = mdb_put(txn, dbi, &key, &data, 0);
+    rc = db_put(&db, ".kvs", &value);
     if (rc) {
         fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
         goto leave;
     }
 
-    rc = mdb_txn_commit(txn);
-    if (rc) {
-        fprintf(stderr, "mdb_txn_commit: (%d) %s\n", rc, mdb_strerror(rc));
-        goto leave;
-    }
+    rc = db_commit(&db);
 
 leave:
-    mdb_dbi_close(env, dbi);
-    mdb_env_close(env);
+    db_close(&db);
 
     return rc == 0 ? 0 : 1;
 }

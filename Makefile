@@ -1,13 +1,26 @@
-programs := kvs mmap
+src = kvs.c db.c
 
-all: $(programs)
+CPPFLAGS = -D_GNU_SOURCE
+CFLAGS = -g -Wall -Wextra -Wno-unused-parameter -Werror -std=c99
+LDLIBS = -llmdb
 
-kvs: kvs.c
-	$(CC) -g -o $@ $< -llmdb
-
-mmap: mmap.c
-	$(CC) -g -o $@ $< -pthread
+obj = $(src:.c=.o)
+dep = $(src:.c=.d)
 
 .PHONY: clean
+
+kvs: $(obj)
+	$(LINK.o) $^ $(LDLIBS) -o $@
+
+mmap: mmap.c
+	$(LINK.c) $^ -pthread -o $@
+
 clean:
-	rm -f $(programs)
+	rm -f kvs mmap *.[do]
+
+%.o: %.c %.d
+	$(COMPILE.c) $< -MMD -MF $*.d -o $@
+
+%.d: ;
+
+-include $(dep)
