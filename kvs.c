@@ -24,7 +24,7 @@
 #include "db.h"
 
 static int get(const char *path, char *key);
-static int set(const char *path, char *key);
+static int set(const char *path, char *key, char *value);
 static int del(const char *path, char *key);
 static int init(const char *path, int size_mb);
 
@@ -48,11 +48,11 @@ int main(int argc, char * argv[])
         }
         return get(path, argv[3]);
     } else if (strcmp(cmd, "set") == 0) {
-        if (argc != 4) {
-            fprintf(stderr, "Usage: kvs PATH set KEY\n");
+        if (argc < 4 || argc > 5) {
+            fprintf(stderr, "Usage: kvs PATH set KEY [VALUE]\n");
             exit(2);
         }
-        return set(path, argv[3]);
+        return set(path, argv[3], argv[4]);
     } else if (strcmp(cmd, "del") == 0) {
         if (argc != 4) {
             fprintf(stderr, "Usage: kvs PATH del KEY\n");
@@ -108,30 +108,34 @@ leave:
     return rc == 0 ? 0 : 1;
 }
 
-static int set(const char *path, char *key)
+static int set(const char *path, char *key, char *value)
 {
     int rc;
     struct db db = {0};
-    MDB_val value;
+    MDB_val val = {0};
 
     rc = db_open(&db, path, 0);
     if (rc)
         goto leave;
 
-    value.mv_data = malloc(DB_MAX_VALUE_SIZE);
-    if (value.mv_data == NULL) {
-        fprintf(stderr, "malloc: (%d) %s\n", errno, strerror(errno));
-        goto leave;
+    if (value) {
+        val.mv_data = value;
+        val.mv_size = strlen(value);
+    } else {
+        val.mv_data = malloc(DB_MAX_VALUE_SIZE);
+        if (val.mv_data == NULL) {
+            fprintf(stderr, "malloc: (%d) %s\n", errno, strerror(errno));
+            goto leave;
+        }
+
+        val.mv_size = fread(val.mv_data, 1, DB_MAX_VALUE_SIZE, stdin);
+        if (ferror(stdin)) {
+            fprintf(stderr, "fread: (%d) %s\n", errno, strerror(errno));
+            goto leave;
+        }
     }
 
-    value.mv_size = fread(value.mv_data, 1, DB_MAX_VALUE_SIZE, stdin);
-
-    if (ferror(stdin)) {
-        fprintf(stderr, "fread: (%d) %s\n", errno, strerror(errno));
-        goto leave;
-    }
-
-    rc = db_put(&db, key, &value);
+    rc = db_put(&db, key, &val);
     if (rc) {
         fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
         goto leave;
@@ -140,7 +144,9 @@ static int set(const char *path, char *key)
     rc = db_commit(&db);
 
 leave:
-    free(value.mv_data);
+    if (val.mv_data != value)
+        free(val.mv_data);
+
     db_close(&db);
 
     return rc == 0 ? 0 : 1;

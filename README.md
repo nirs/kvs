@@ -47,11 +47,19 @@ copy it into the block device:
 lmbd does not support yet block device on master. Using rawpart branch
 this hack should not be needed.
 
-## Setting key
+## Setting keys
 
-The value is read from stdin:
+For simple value, use a command line argumnet:
+
+    $ kvs /dev/kvs/db set foo "it works!"
+
+If the value is more complex, you can use stdin:
 
     $ echo "it works!" | kvs /dev/kvs/db set foo
+
+Or read from a file (actually from stdin):
+
+    $ kvs /dev/kvs/db set foo < foo.json
 
 ## Getting keys
 
