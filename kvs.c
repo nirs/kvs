@@ -91,10 +91,8 @@ static int get(const char *path, char *key)
         goto leave;
 
     rc = db_get(&db, key, &value);
-    if (rc) {
-        fprintf(stderr, "mbd_get: (%d) %s\n", rc, mdb_strerror(rc));
+    if (rc)
         goto leave;
-    }
 
     rc = fwrite(value.mv_data, value.mv_size, 1, stdout);
     if (rc != 1) {
@@ -136,10 +134,8 @@ static int set(const char *path, char *key, char *value)
     }
 
     rc = db_put(&db, key, &val);
-    if (rc) {
-        fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
+    if (rc)
         goto leave;
-    }
 
     rc = db_commit(&db);
 
@@ -195,10 +191,8 @@ static int init(const char *path, int size_mb)
     value.mv_size = strlen(value.mv_data);
 
     rc = db_put(&db, ".kvs", &value);
-    if (rc) {
-        fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
+    if (rc)
         goto leave;
-    }
 
     rc = db_commit(&db);
 

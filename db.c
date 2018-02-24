@@ -67,32 +67,47 @@ error:
 
 int db_get(struct db *db, char *key, MDB_val *value)
 {
+    int rc;
     MDB_val kv;
 
     kv.mv_data = key;
     kv.mv_size = strlen(key);
 
-    return mdb_get(db->txn, db->dbi, &kv, value);
+    rc = mdb_get(db->txn, db->dbi, &kv, value);
+    if (rc)
+        fprintf(stderr, "mdb_get: (%d) %s\n", rc, mdb_strerror(rc));
+
+    return rc;
 }
 
 int db_put(struct db *db, char *key, MDB_val *value)
 {
+    int rc;
     MDB_val kv;
 
     kv.mv_data = key;
     kv.mv_size = strlen(key);
 
-    return mdb_put(db->txn, db->dbi, &kv, value, 0);
+    rc = mdb_put(db->txn, db->dbi, &kv, value, 0);
+    if (rc)
+        fprintf(stderr, "mdb_put: (%d) %s\n", rc, mdb_strerror(rc));
+
+    return rc;
 }
 
 int db_del(struct db *db, char *key)
 {
+    int rc;
     MDB_val kv;
 
     kv.mv_data = key;
     kv.mv_size = strlen(key);
 
-    return mdb_del(db->txn, db->dbi, &kv, NULL);
+    rc = mdb_del(db->txn, db->dbi, &kv, NULL);
+    if (rc)
+        fprintf(stderr, "mdb_del: (%d) %s\n", rc, mdb_strerror(rc));
+
+    return rc;
 }
 
 int db_commit(struct db *db)
